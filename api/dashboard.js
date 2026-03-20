@@ -30,7 +30,7 @@ function matchCampaign(name) {
 }
 
 async function redisCmd(args){const url=process.env.KV_REST_API_URL;const token=process.env.KV_REST_API_TOKEN;if(!url||!token)return null;try{const r=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(args)});return(await r.json()).result}catch{return null}}
-function getDates(days){const d=[];const now=new Date();for(let i=0;i<days;i++){const x=new Date(now);x.setDate(x.getDate()-i);d.push(x.toISOString().slice(0,10))}return d}
+function getDates(days){const d=[];const now=new Date(Date.now()-3*60*60*1000);for(let i=0;i<days;i++){const x=new Date(now);x.setDate(x.getDate()-i);d.push(x.toISOString().slice(0,10))}return d}
 
 module.exports=async function handler(req,res){
 if(req.method!=="GET")return res.status(405).json({error:"GET only"});
