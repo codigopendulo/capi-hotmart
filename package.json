@@ -1,0 +1,6 @@
+{
+  "name": "musculolab-capi",
+  "version": "1.0.0",
+  "description": "Musculo Lab — Hotmart → Facebook CAPI endpoint",
+  "private": true
+}

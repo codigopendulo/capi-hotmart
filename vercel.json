@@ -1,0 +1,8 @@
+{
+  "version": 2,
+  "routes": [
+    { "src": "/api/capi", "methods": ["POST", "OPTIONS"], "dest": "/api/capi.js" },
+    { "src": "/health", "dest": "/api/health.js" },
+    { "src": "/(.*)", "status": 404, "dest": "/api/404.js" }
+  ]
+}
