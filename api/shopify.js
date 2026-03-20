@@ -46,7 +46,7 @@ module.exports = async function handler(req, res) {
       await redisPush("sales:" + dateKey, {
         t: "shopify_" + orderId + "_" + item.id,
         p: prodName,
-        v: parseFloat(item.price) || 0,
+        v: (item.price && req.body.currency === "ARS") ? parseFloat(item.price) / 1450 : parseFloat(item.price) || 0,
         c: currency,
         d: dateKey,
         ts: Math.floor(new Date(order.created_at || Date.now()).getTime() / 1000),
