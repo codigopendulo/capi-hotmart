@@ -1,7 +1,33 @@
 const FB_ADS_TOKEN = "EAAQPNWCQHmABRJaZBoOQjrZBIRBZA7CpchrLQrBraNfHhYdctdIZCXDSEXNYecpxTG82EjmZAZCUPpLHZAdrJZBPcgytWfTC0DnCERp7ZC4H53gtN9SPkSeUaJj3gOZCQ1Aql6eLgQZBTIDgzECbDGSmX8RzZCZBrjvsTfMszWiQPcUScriyYQ3ZBUb8z5q2N1zBdQtnjy8QZDZD";
 const AD_ACCOUNT = "act_635529528561013";
 const HOTMART_FEE = 1;
-const ALL_CMAP = {"GYM internacional":"Gym INT","GYM MUJERES INTERNACIONAL":"Guia Mujeres INT","Recetario Fitness Internacional":"Recetario INT","Gl\u00fateos Internacional":"Gluteos INT","Definici\u00f3n con Ciencia Internacional":"Definicion INT","GYM":"Gym AR","GYM MUJERES":"Gym Mujeres AR","Recetario Fitness":"Recetario AR","Gl\u00fateos":"Gluteos AR","Definici\u00f3n con Ciencia":"Definicion AR"};
+
+// Matching parcial: orden importa (internacional primero, después AR)
+const CAMP_RULES = [
+  { match: "casa mujeres", int: "int", prod: "Casa Mujeres INT" },
+  { match: "casa mujeres", int: null, prod: "Casa Mujeres AR" },
+  { match: "gym mujeres", int: "int", prod: "Guia Mujeres INT" },
+  { match: "gym mujeres", int: null, prod: "Gym Mujeres AR" },
+  { match: "recetario", int: "int", prod: "Recetario INT" },
+  { match: "recetario", int: null, prod: "Recetario AR" },
+  { match: "gluteo", int: "int", prod: "Gluteos INT" },
+  { match: "gluteo", int: null, prod: "Gluteos AR" },
+  { match: "definici", int: "int", prod: "Definicion INT" },
+  { match: "definici", int: null, prod: "Definicion AR" },
+  { match: "gym", int: "int", prod: "Gym INT" },
+  { match: "gym", int: null, prod: "Gym AR" },
+];
+
+function matchCampaign(name) {
+  const low = name.toLowerCase();
+  const isInt = low.includes("internacional") || low.includes(" int ");
+  for (const rule of CAMP_RULES) {
+    if (!low.includes(rule.match)) continue;
+    if (rule.int === "int" && isInt) return rule.prod;
+    if (rule.int === null && !isInt) return rule.prod;
+  }
+  return null;
+}
 
 async function redisCmd(args){const url=process.env.KV_REST_API_URL;const token=process.env.KV_REST_API_TOKEN;if(!url||!token)return null;try{const r=await fetch(url,{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify(args)});return(await r.json()).result}catch{return null}}
 function getDates(days){const d=[];const now=new Date();for(let i=0;i<days;i++){const x=new Date(now);x.setDate(x.getDate()-i);d.push(x.toISOString().slice(0,10))}return d}
@@ -38,7 +64,7 @@ const fbUrl=`https://graph.facebook.com/v21.0/${AD_ACCOUNT}/insights?fields=${fi
 const d=await(await fetch(fbUrl)).json();
 if(d.data)for(const row of d.data){
 const campaign=row.campaign_name||"";
-const product=ALL_CMAP[campaign]||null;
+const product=matchCampaign(campaign);
 if(!product)continue;
 const spend=parseFloat(row.spend)||0;
 const clicks=parseInt(row.clicks)||0;
@@ -62,7 +88,7 @@ adsets.push({campaign,product,adset:row.adset_name,spend,clicks,ctr,purchases,pu
 }}catch(e){console.error("FB error:",e.message)}
 adsets.sort((a,b)=>b.spend-a.spend);
 
-const products=["Gym INT","Guia Mujeres INT","Recetario INT","Gluteos INT","Definicion INT","Casa Mujeres INT"];
+const products=["Gym AR","Gym INT","Gym Mujeres AR","Guia Mujeres INT","Recetario AR","Recetario INT","Gluteos AR","Gluteos INT","Definicion AR","Definicion INT","Casa Mujeres AR","Casa Mujeres INT"];
 const prodRows=products.map(p=>{
 const s=byProd[p]||{rev:0,rev_main:0,rev_bump:0,n:0,n_main:0,bumps:0};
 const pm=prodMetrics[p]||{bumpRate:0,aovGross:0,aovNeto:0,cpaBE:0,mult:1};
@@ -80,7 +106,7 @@ const sc=s=>{switch(s){case"ESCALAR":return{b:"#0f5132",t:"#d1e7dd",bo:"#198754"
 const badge=s=>{const c=sc(s);return`<span class="badge" style="background:${c.b};color:${c.t};border:1px solid ${c.bo}">${s}</span>`};
 const rc=r=>r>=3?"green":r>=1.5?"gold":r>0?"red":"";
 
-const prodTable=prodRows.map(r=>`<tr>
+const prodTable=prodRows.filter(r=>r.spend>0||r.rev>0).map(r=>`<tr>
 <td class="prod">${r.p}</td>
 <td class="money">${$(r.rev)}</td>
 <td class="money">${$(r.spend)}</td>
@@ -121,16 +147,16 @@ const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta nam
 <div class="filters"><a href="?days=1" ${days===1?'class="active"':''}>Hoy</a><a href="?days=3" ${days===3?'class="active"':''}>3 dias</a><a href="?days=7" ${days===7?'class="active"':''}>7 dias</a><a href="?days=14" ${days===14?'class="active"':''}>14 dias</a><a href="?days=30" ${days===30?'class="active"':''}>30 dias</a></div>
 
 <div class="totals">
-<div class="tc"><div class="l">Ingresos Hotmart</div><div class="v gold">${$(T.rev)}</div></div>
-<div class="tc"><div class="l">Gasto Facebook</div><div class="v">${$(T.spend)}</div></div>
-<div class="tc"><div class="l">Ganancia Neta</div><div class="v ${T.profit>=0?'green':'red'}">${$(T.profit)}</div></div>
+<div class="tc"><div class="l">Ingresos</div><div class="v gold">${$(T.rev)}</div></div>
+<div class="tc"><div class="l">Gasto FB</div><div class="v">${$(T.spend)}</div></div>
+<div class="tc"><div class="l">Ganancia</div><div class="v ${T.profit>=0?'green':'red'}">${$(T.profit)}</div></div>
 <div class="tc"><div class="l">Ventas</div><div class="v">${T.n}</div></div>
-<div class="tc"><div class="l">Order Bumps</div><div class="v">${T.bumps}</div></div>
+<div class="tc"><div class="l">Bumps</div><div class="v">${T.bumps}</div></div>
 <div class="tc"><div class="l">ROAS</div><div class="v ${rc(T.roas)}">${T.roas>0?T.roas.toFixed(2)+'x':'-'}</div></div>
 </div>
 
 <h2>RENTABILIDAD POR PRODUCTO</h2>
-<div class="info-box"><strong>Estos numeros se calculan con ventas reales de Hotmart.</strong> Se actualizan solos con cada venta. El CPA Maximo es lo maximo que podes pagar por venta sin perder plata (AOV neto despues de comisiones).</div>
+<div class="info-box"><strong>Datos reales de Hotmart y Shopify.</strong> Se actualizan con cada venta. CPA Maximo = lo maximo que podes pagar por venta sin perder plata.</div>
 <table><thead><tr>
 <th>Producto</th><th style="text-align:right">Ingresos</th><th style="text-align:right">Gasto FB</th><th style="text-align:right">Ganancia</th>
 <th style="text-align:center">Ventas</th><th style="text-align:center">Bumps</th><th style="text-align:center">% Bump</th>
@@ -139,14 +165,14 @@ const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta nam
 <tfoot><tr><td>TOTAL</td><td class="money gold">${$(T.rev)}</td><td class="money">${$(T.spend)}</td><td class="money ${T.profit>=0?'green':'red'}">${$(T.profit)}</td><td class="center">${T.n}</td><td class="center">${T.bumps}</td><td></td><td></td><td></td><td></td><td></td></tr></tfoot></table>
 
 <h2>DECISION POR CONJUNTO DE ANUNCIOS</h2>
-<div class="info-box"><strong>CPA vs CPA Maximo:</strong> Si tu CPA es menor al maximo, ganas plata. <span class="green">Verde = CPA menor al 60% del maximo (escalar)</span> | <span class="gold">Amarillo = entre 60-100% (rentable)</span> | <span class="red">Rojo = arriba del maximo (perdes plata, apagar)</span></div>
+<div class="info-box"><strong>CPA vs CPA Maximo:</strong> <span class="green">Verde = ganando bien (escalar)</span> | <span class="gold">Amarillo = rentable (mantener)</span> | <span class="red">Rojo = perdiendo plata (apagar)</span></div>
 <table><thead><tr>
 <th>Conjunto de Anuncios</th><th style="text-align:right">Gasto</th><th style="text-align:center">Ventas</th><th style="text-align:right">CPA</th><th style="text-align:right">CPA Max</th>
 <th style="text-align:right">Ingreso FB</th><th style="text-align:right">Ingreso Real</th><th style="text-align:center">ROAS Real</th><th style="text-align:center">Accion</th>
-</tr></thead><tbody>${adsetHtml||'<tr><td colspan="9" class="center dim" style="padding:20px">No hay datos de conjuntos de anuncios para este periodo</td></tr>'}</tbody></table>
+</tr></thead><tbody>${adsetHtml||'<tr><td colspan="9" class="center dim" style="padding:20px">No hay datos</td></tr>'}</tbody></table>
 
-<div class="legend"><span>ESCALAR: CPA menor al 60% del maximo — subir presupuesto</span><span>RENTABLE: CPA entre 60-85% — mantener</span><span>AJUSTADO: CPA entre 85-100% — cambiar creativos</span><span>MATAR: CPA arriba del maximo — apagar ya</span></div>
-<div class="note">Ingresos: webhooks Hotmart (tiempo real) | Gasto: Facebook API (cache 5 min) | Comision Hotmart: $${HOTMART_FEE}/transaccion | ${new Date().toISOString().slice(0,19)} UTC</div>
+<div class="legend"><span>ESCALAR: CPA menor al 60% del maximo</span><span>RENTABLE: 60-85%</span><span>AJUSTADO: 85-100%</span><span>MATAR: arriba del maximo</span></div>
+<div class="note">Ingresos: Hotmart + Shopify (tiempo real) | Gasto: Facebook API | Comision: $${HOTMART_FEE}/transaccion | ${new Date().toISOString().slice(0,19)} UTC</div>
 </div></body></html>`;
 
 res.setHeader("Content-Type","text/html; charset=utf-8");
