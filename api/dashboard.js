@@ -42,7 +42,7 @@ const allSales=[];
 for(const date of dates){const raw=await redisCmd(["LRANGE","sales:"+date,"0","-1"]);if(raw)allSales.push(...raw.map(s=>{try{return JSON.parse(s)}catch{return null}}).filter(Boolean))}
 
 const byProd={};
-for(const s of allSales){const p=s.p||"Desconocido";if(!byProd[p])byProd[p]={rev:0,rev_main:0,rev_bump:0,n:0,n_main:0,bumps:0,fees:0};byProd[p].rev+=s.v;byProd[p].n++;byProd[p].fees+=(s.src==="shopify"?s.v*0.11:1);if(s.bump){byProd[p].rev_bump+=s.v;byProd[p].bumps++}else{byProd[p].rev_main+=s.v;byProd[p].n_main++}}
+for(const s of allSales){const p=s.p||"Desconocido";if(!byProd[p])byProd[p]={rev:0,rev_main:0,rev_bump:0,n:0,n_main:0,bumps:0};byProd[p].rev+=s.v;byProd[p].n++;if(s.bump){byProd[p].rev_bump+=s.v;byProd[p].bumps++}else{byProd[p].rev_main+=s.v;byProd[p].n_main++}}
 
 const prodMetrics={};
 for(const[p,d]of Object.entries(byProd)){
@@ -90,10 +90,10 @@ adsets.sort((a,b)=>b.spend-a.spend);
 
 const products=["Gym AR","Gym INT","Gym Mujeres AR","Guia Mujeres INT","Recetario AR","Recetario INT","Gluteos AR","Gluteos INT","Definicion AR","Definicion INT","Casa Mujeres AR","Casa Mujeres INT"];
 const prodRows=products.map(p=>{
-const s=byProd[p]||{rev:0,rev_main:0,rev_bump:0,n:0,n_main:0,bumps:0,fees:0};
+const s=byProd[p]||{rev:0,rev_main:0,rev_bump:0,n:0,n_main:0,bumps:0};
 const pm=prodMetrics[p]||{bumpRate:0,aovGross:0,aovNeto:0,cpaBE:0,mult:1};
 const spend=adsets.filter(a=>a.product===p).reduce((acc,a)=>acc+a.spend,0);
-const profit=s.rev-s.fees-spend;
+const profit=s.rev-(s.n*HOTMART_FEE)-spend;
 const roas=spend>0?s.rev/spend:0;
 let st="SIN DATA";if(spend>0&&s.rev>0)st=roas>=3?"ESCALAR":roas>=2?"RENTABLE":roas>=1.5?"AJUSTADO":"MATAR";else if(spend>0)st="MATAR";
 return{p,rev:s.rev,revBump:s.rev_bump,spend,profit,roas,st,n:s.n_main,bumps:s.bumps,...pm}});
