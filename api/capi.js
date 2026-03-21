@@ -75,7 +75,7 @@ module.exports = async function handler(req, res) {
     const config = OFFER_MAP[offerCode] || PRODUCT_MAP[productId] || null;
 
     await redisPush("sales:" + dateKey, {
-      t: transactionId, p: config?.name || productName, v: parseFloat(purchaseValue) || 0,
+      t: transactionId, p: config?.name || productName, v: isOrderBump ? 6 : 9,
       c: purchaseCurrency, d: dateKey, ts: Math.floor(saleDate.getTime() / 1000),
       bump: isOrderBump ? 1 : 0, oc: offerCode,
     });
