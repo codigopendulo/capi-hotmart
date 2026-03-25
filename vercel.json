@@ -1,10 +1,49 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/api/capi", "methods": ["POST", "OPTIONS"], "dest": "/api/capi.js" },
-    { "src": "/api/shopify", "methods": ["POST"], "dest": "/api/shopify.js" },
-    { "src": "/dashboard", "dest": "/api/dashboard.js" },
-    { "src": "/health", "dest": "/api/health.js" },
-    { "src": "/(.*)", "status": 404, "dest": "/api/404.js" }
+    {
+      "src": "/api/capi",
+      "methods": [
+        "POST",
+        "OPTIONS"
+      ],
+      "dest": "/api/capi.js"
+    },
+    {
+      "src": "/api/shopify",
+      "methods": [
+        "POST"
+      ],
+      "dest": "/api/shopify.js"
+    },
+    {
+      "src": "/dashboard",
+      "dest": "/api/dashboard.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/health.js"
+    },
+    {
+      "src": "/api/instagram",
+      "dest": "/api/instagram.js"
+    },
+    {
+      "src": "/api/whatsapp",
+      "dest": "/api/whatsapp.js"
+    },
+    {
+      "src": "/api/escalations",
+      "dest": "/api/escalations.js"
+    },
+    {
+      "src": "/api/agent-health",
+      "dest": "/api/agent-health.js"
+    },
+    {
+      "src": "/(.*)",
+      "status": 404,
+      "dest": "/api/404.js"
+    }
   ]
 }
