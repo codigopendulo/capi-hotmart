@@ -7,6 +7,7 @@ const BUMP_PRICE = 6;
 
 // Mapeo por NOMBRE del producto (partial match)
 const NAME_RULES = [
+  { match: "movilidad", pixel: "1652293156214890", name: "Movilidad INT" },
   { match: "casa", match2: "mujer", pixel: "4425253034371518", name: "Casa Mujeres INT" },
   { match: "gluteo", pixel: "1280087564046010", name: "Gluteos INT" },
   { match: "recetario", pixel: "875087032201190", name: "Recetario INT" },
