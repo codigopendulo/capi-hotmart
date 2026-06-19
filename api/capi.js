@@ -17,6 +17,9 @@ const NAME_RULES = [
   { match: "movilidad", pixel: "1652293156214890", name: "Movilidad INT", avatar_type: "general" },
   { match: "casa", match2: "mujer", pixel: "4425253034371518", name: "Casa Mujeres INT", avatar_type: "mujer" },
   { match: "gluteo", pixel: "1280087564046010", name: "Gluteos INT", avatar_type: "mujer" },
+  { match: "tortas", pixel: "1583923546681286", name: "Tortas INT", avatar_type: "general" },
+  { match: "fryer", pixel: "2742914289411827", name: "Air Fryer INT", avatar_type: "general" },
+  { match: "prote", pixel: "2081677916076217", name: "Proteina INT", avatar_type: "general" },
   { match: "recetario", pixel: "875087032201190", name: "Recetario INT", avatar_type: "general" },
   { match: "definici", pixel: "909452265335265", name: "Definicion INT", avatar_type: "general" },
   { match: "mujer", pixel: "1647651849595676", name: "Guia Mujeres INT", avatar_type: "mujer" },
@@ -302,40 +305,20 @@ module.exports = async function handler(req, res) {
     }
 
     // ========================================================================
-    // FB CAPI — flujo original sin tocar
+    // FB CAPI — DESACTIVADO a propósito (junio 2026).
+    // Las compras a Meta ahora las envía el "Pixel de Seguimiento" NATIVO de
+    // Hotmart (API de Conversión con token por producto). Si este webhook
+    // también las mandara, Meta contaría la compra DOS veces (event_id distinto).
+    // Por eso acá NO se envía a FB: este endpoint solo alimenta el dashboard
+    // de ventas (Redis) y Klaviyo (ambos ya ejecutados arriba).
+    // Para reactivar el envío propio, descomentar el bloque del historial git.
     // ========================================================================
     if (isOrderBump) {
-      log("info", "Order bump guardado, NO enviado a FB", { product: dashName, value: price });
-      return res.status(200).json({ status: "filtered", reason: "order_bump", transaction: transactionId, saved: true });
+      return res.status(200).json({ status: "ok", reason: "order_bump", transaction: transactionId, saved: true });
     }
-
     if (!config) log("warn", "Producto NO mapeado", { product_name: productName });
-
-    const nameParts = buyerName.trim().split(/\s+/);
-    const eventData = {
-      data: [{
-        event_name: "Purchase", event_time: eventTime, event_id: "hotmart_" + transactionId,
-        action_source: "website", event_source_url: "https://musculolab.lat",
-        user_data: {
-          ...(sha256(buyerEmail) ? { em: [sha256(buyerEmail)] } : {}),
-          ...(sha256(nameParts[0]) ? { fn: [sha256(nameParts[0])] } : {}),
-          ...(sha256(nameParts.slice(1).join(" ")) ? { ln: [sha256(nameParts.slice(1).join(" "))] } : {}),
-          ...(buyerCountry ? { country: [sha256(buyerCountry)] } : {}),
-        },
-        custom_data: { currency: "USD", value: price, content_name: productName, content_type: "product", content_ids: [productId], order_id: transactionId },
-      }],
-    };
-
-    const fbUrl = "https://graph.facebook.com/v21.0/" + pixelId + "/events?access_token=" + CAPI_TOKEN;
-    const fbResponse = await fetch(fbUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(eventData) });
-    const fbResult = await fbResponse.json();
-
-    if (!fbResponse.ok) {
-      log("error", "FB CAPI error", { fb_error: fbResult?.error, pixel: pixelId, transaction: transactionId });
-      return res.status(200).json({ status: "fb_error", fb_error: fbResult?.error?.message || "unknown", pixel: pixelId, transaction: transactionId });
-    }
-    log("info", "Purchase enviado a FB", { pixel: pixelId, product: dashName, transaction: transactionId, value: price });
-    return res.status(200).json({ status: "ok", pixel: pixelId, product: dashName, transaction: transactionId, events_received: fbResult?.events_received || 0 });
+    log("info", "Purchase NO enviado a FB (lo manda el pixel nativo de Hotmart)", { pixel: pixelId, product: dashName, transaction: transactionId, value: price });
+    return res.status(200).json({ status: "ok", reason: "fb_via_hotmart_native", pixel: pixelId, product: dashName, transaction: transactionId, saved: true });
   } catch (err) {
     log("error", "Error", { error: err.message });
     return res.status(200).json({ status: "error", message: err.message });
