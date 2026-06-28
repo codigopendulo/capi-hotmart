@@ -1,12 +1,11 @@
 const crypto = require('crypto');
-
 const CAPI_TOKEN = process.env.CAPI_TOKEN || "";
 const HOTMART_HOTTOK = process.env.HOTMART_HOTTOK || "";
 const KLAVIYO_PRIVATE_API_KEY = process.env.KLAVIYO_PRIVATE_API_KEY || "";
 const KLAVIYO_API_VERSION = "2024-10-15";
+const FB_API_VERSION = "v21.0";
 const MAIN_PRICE = 9;
 const BUMP_PRICE = 6;
-
 // Mapeo por NOMBRE del producto (partial match)
 // avatar_type se usa para segmentación en Klaviyo
 const NAME_RULES = [
@@ -26,10 +25,8 @@ const NAME_RULES = [
   { match: "gym", pixel: "890153273827620", name: "Gym INT", avatar_type: "principiante" },
   { match: "entrenar", pixel: "890153273827620", name: "Gym INT", avatar_type: "principiante" },
 ];
-
 const FALLBACK_PIXEL = "1557076912260111";
 const FALLBACK_NAME = "Desconocido";
-
 function matchProduct(productName) {
   const low = (productName || "").toLowerCase();
   for (const rule of NAME_RULES) {
@@ -39,7 +36,6 @@ function matchProduct(productName) {
   }
   return null;
 }
-
 function sha256(value) {
   if (!value) return null;
   return crypto.createHash("sha256").update(value.toString().trim().toLowerCase()).digest("hex");
@@ -47,7 +43,6 @@ function sha256(value) {
 function log(level, msg, data = {}) {
   console.log(JSON.stringify({ timestamp: new Date().toISOString(), level, message: msg, ...data }));
 }
-
 async function redisPush(key, value) {
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
@@ -61,11 +56,58 @@ async function redisPush(key, value) {
     return await r.json();
   } catch (e) { log("error", "Redis error", { error: e.message }); return null; }
 }
-
+// ============================================================================
+// FB CONVERSIONS API — REACTIVADO (junio 2026)
+// Vuelve a ser la ÚNICA fuente de Purchase hacia Meta (apagar el pixel nativo
+// de Hotmart para no contar doble). Dedup determinístico: event_id = transaction.
+// ============================================================================
+async function sendToFacebook({ pixelId, email, firstName, lastName, country, value, eventTime, transactionId, eventSourceUrl }) {
+  if (!CAPI_TOKEN) {
+    log("warn", "CAPI_TOKEN no configurada, skip FB");
+    return { status: "skipped", reason: "no_token" };
+  }
+  if (!pixelId) {
+    log("warn", "Sin pixelId, skip FB", { transaction: transactionId });
+    return { status: "skipped", reason: "no_pixel" };
+  }
+  const userData = {};
+  if (email) userData.em = [sha256(email)];
+  if (firstName) userData.fn = [sha256(firstName)];
+  if (lastName) userData.ln = [sha256(lastName)];
+  if (country) userData.country = [sha256(country)];
+  const eventBody = {
+    data: [{
+      event_name: "Purchase",
+      event_time: eventTime,
+      event_id: String(transactionId),          // dedup determinístico (= transaction Hotmart)
+      action_source: "website",
+      event_source_url: eventSourceUrl || "https://musculolab.lat",
+      user_data: userData,
+      custom_data: { currency: "USD", value: value }
+    }]
+  };
+  try {
+    const url = "https://graph.facebook.com/" + FB_API_VERSION + "/" + pixelId + "/events?access_token=" + CAPI_TOKEN;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(eventBody)
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (r.ok) {
+      log("info", "FB CAPI Purchase enviado OK", { pixel: pixelId, transaction: transactionId, value, events_received: resp?.events_received });
+      return { status: "ok" };
+    }
+    log("error", "FB CAPI error", { status: r.status, body: JSON.stringify(resp).slice(0, 500), transaction: transactionId });
+    return { status: "error", code: r.status };
+  } catch (e) {
+    log("error", "FB CAPI exception", { error: e.message, transaction: transactionId });
+    return { status: "exception", error: e.message };
+  }
+}
 // ============================================================================
 // BRIDGE KLAVIYO — agregado v0.3 del Prompt Maestro Email Marketing
 // ============================================================================
-
 // Dedupe: chequea en Redis si ya enviamos esta transacción a Klaviyo
 async function klaviyoAlreadySent(transactionId) {
   const url = process.env.KV_REST_API_URL;
@@ -85,7 +127,6 @@ async function klaviyoAlreadySent(transactionId) {
     return false;
   }
 }
-
 // Marca en Redis que ya enviamos esta transacción (TTL 24hs)
 async function klaviyoMarkSent(transactionId) {
   const url = process.env.KV_REST_API_URL;
@@ -102,14 +143,12 @@ async function klaviyoMarkSent(transactionId) {
     log("warn", "Klaviyo mark sent failed (continuing)", { error: e.message });
   }
 }
-
 // Detecta idioma/locale del buyer en función del país
 function detectLanguage(country) {
   const c = (country || "").toUpperCase();
   if (c === "AR" || c === "ARG" || c === "ARGENTINA") return "es-AR";
   return "es-neutro";
 }
-
 // Envía evento custom a Klaviyo: "Hotmart Order Placed"
 // Klaviyo crea automáticamente el perfil si no existe
 async function sendToKlaviyo(payload) {
@@ -121,18 +160,15 @@ async function sendToKlaviyo(payload) {
     log("warn", "Klaviyo skip: sin email", { transaction: payload.transactionId });
     return { status: "skipped", reason: "no_email" };
   }
-
   // Dedupe
   const alreadySent = await klaviyoAlreadySent(payload.transactionId);
   if (alreadySent) {
     log("info", "Klaviyo dedupe hit, skip duplicate", { transaction: payload.transactionId });
     return { status: "deduped" };
   }
-
   const nameParts = (payload.fullName || "").trim().split(/\s+/);
   const firstName = nameParts[0] || "";
   const lastName = nameParts.slice(1).join(" ") || "";
-
   const eventBody = {
     data: {
       type: "event",
@@ -181,7 +217,6 @@ async function sendToKlaviyo(payload) {
       }
     }
   };
-
   try {
     const url = "https://a.klaviyo.com/api/events/";
     const r = await fetch(url, {
@@ -194,7 +229,6 @@ async function sendToKlaviyo(payload) {
       },
       body: JSON.stringify(eventBody)
     });
-
     if (r.status === 202 || r.status === 200) {
       await klaviyoMarkSent(payload.transactionId);
       log("info", "Klaviyo event enviado OK", {
@@ -222,29 +256,23 @@ async function sendToKlaviyo(payload) {
     return { status: "exception", error: e.message };
   }
 }
-
 // ============================================================================
-// HANDLER PRINCIPAL — original + bridge a Klaviyo no-bloqueante
+// HANDLER PRINCIPAL — original + FB CAPI reactivado + bridge Klaviyo
 // ============================================================================
-
 module.exports = async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-
   try {
     const body = req.body;
     log("info", "Webhook recibido", { event: body?.event, product_name: body?.data?.product?.name, offer_code: body?.data?.purchase?.offer?.code });
-
     if (HOTMART_HOTTOK) {
       const receivedToken = body?.hottok || req.headers["x-hotmart-hottok"] || "";
       if (receivedToken !== HOTMART_HOTTOK) return res.status(401).json({ error: "Invalid hottok" });
     }
-
     const event = body?.event;
     if (!/^PURCHASE_(APPROVED|COMPLETE|PROTEST)$/.test(event)) {
       return res.status(200).json({ status: "ignored", reason: "event " + event + " not tracked" });
     }
-
     const data = body?.data || {};
     const product = data?.product || {};
     const buyer = data?.buyer || {};
@@ -258,30 +286,24 @@ module.exports = async function handler(req, res) {
     const transactionId = purchase?.transaction || "";
     const approvedDate = purchase?.approved_date || Date.now();
     const isOrderBump = purchase?.offer?.payment_type === "ORDER_BUMP" || purchase?.is_order_bump === true;
-
     // Mapear por nombre del producto
     const config = matchProduct(productName);
     const pixelId = config?.pixel || FALLBACK_PIXEL;
     const dashName = config?.name || productName;
     const avatarType = config?.avatar_type || "general";
     const matchKey = config?.match || "unknown";
-
     // Precio fijo (Hotmart manda moneda local, no sirve)
     const price = isOrderBump ? BUMP_PRICE : MAIN_PRICE;
-
     const saleDate = new Date(typeof approvedDate === "number" && approvedDate > 1e12 ? approvedDate : (approvedDate || Date.now()));
     const dateKey = saleDate.toISOString().slice(0, 10);
     const eventTime = typeof approvedDate === "number" && approvedDate > 1e12 ? Math.floor(approvedDate / 1000) : Math.floor(Date.now() / 1000);
-
     await redisPush("sales:" + dateKey, {
       t: transactionId, p: dashName, v: price,
       c: "USD", d: dateKey, ts: Math.floor(saleDate.getTime() / 1000),
       bump: isOrderBump ? 1 : 0, oc: offerCode,
     });
-
     // ========================================================================
     // BRIDGE KLAVIYO — fire-and-forget, NO bloquea el flujo principal
-    // Si falla, logueamos pero NUNCA propagamos el error al handler.
     // ========================================================================
     try {
       const klaviyoResult = await sendToKlaviyo({
@@ -300,25 +322,34 @@ module.exports = async function handler(req, res) {
       });
       log("info", "Klaviyo bridge result", { result: klaviyoResult.status, transaction: transactionId });
     } catch (klErr) {
-      // Catch defensivo extra: si TODO falla con Klaviyo, seguimos con FB sin drama
       log("error", "Klaviyo bridge exception (ignored, FB sigue)", { error: klErr.message, transaction: transactionId });
     }
-
     // ========================================================================
-    // FB CAPI — DESACTIVADO a propósito (junio 2026).
-    // Las compras a Meta ahora las envía el "Pixel de Seguimiento" NATIVO de
-    // Hotmart (API de Conversión con token por producto). Si este webhook
-    // también las mandara, Meta contaría la compra DOS veces (event_id distinto).
-    // Por eso acá NO se envía a FB: este endpoint solo alimenta el dashboard
-    // de ventas (Redis) y Klaviyo (ambos ya ejecutados arriba).
-    // Para reactivar el envío propio, descomentar el bloque del historial git.
+    // FB CAPI — order bumps NO se mandan a Facebook (señal limpia)
     // ========================================================================
     if (isOrderBump) {
       return res.status(200).json({ status: "ok", reason: "order_bump", transaction: transactionId, saved: true });
     }
-    if (!config) log("warn", "Producto NO mapeado", { product_name: productName });
-    log("info", "Purchase NO enviado a FB (lo manda el pixel nativo de Hotmart)", { pixel: pixelId, product: dashName, transaction: transactionId, value: price });
-    return res.status(200).json({ status: "ok", reason: "fb_via_hotmart_native", pixel: pixelId, product: dashName, transaction: transactionId, saved: true });
+    if (!config) log("warn", "Producto NO mapeado, usando fallback pixel", { product_name: productName, pixel: FALLBACK_PIXEL });
+    let fbStatus = "skipped";
+    try {
+      const nameParts = (buyerName || "").trim().split(/\s+/);
+      const fbResult = await sendToFacebook({
+        pixelId: pixelId,
+        email: buyerEmail,
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" ") || "",
+        country: buyerCountry,
+        value: price,
+        eventTime: eventTime,
+        transactionId: transactionId
+      });
+      fbStatus = fbResult.status;
+    } catch (fbErr) {
+      log("error", "FB CAPI exception (ignored)", { error: fbErr.message, transaction: transactionId });
+    }
+    log("info", "Purchase procesado", { pixel: pixelId, product: dashName, transaction: transactionId, value: price, fb: fbStatus });
+    return res.status(200).json({ status: "ok", pixel: pixelId, product: dashName, transaction: transactionId, fb: fbStatus, saved: true });
   } catch (err) {
     log("error", "Error", { error: err.message });
     return res.status(200).json({ status: "error", message: err.message });
