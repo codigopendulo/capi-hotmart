@@ -9,6 +9,8 @@ const BUMP_PRICE = 6;
 // Mapeo por NOMBRE del producto (partial match)
 // avatar_type se usa para segmentación en Klaviyo
 const NAME_RULES = [
+  { match: "contractura", pixel: "1036294476026316", name: "Chau Contracturas INT", avatar_type: "general" },
+  { match: "masaje", pixel: "1036294476026316", name: "Chau Contracturas INT", avatar_type: "general" },
   { match: "keto", pixel: "1505031714597684", name: "Keto Reto INT", avatar_type: "general" },
   { match: "atleta", pixel: "1301395001965987", name: "Atleta Hibrido INT", avatar_type: "general" },
   { match: "hibrido", pixel: "1301395001965987", name: "Atleta Hibrido INT", avatar_type: "general" },
